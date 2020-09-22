@@ -2,20 +2,18 @@
 
 Plugin for Cura 4.7 that allows printing on QIDI 3D printers over network 
 
+![Screenshot of the print button](/screenshots/print-button.png)
+
 ## Manual Installation
 
 with Cura not running, unpack the zip file from the
 [release](https://github.com/alkaes/QidiPrint/releases/latest) to this
 specific folder:
 
-`C:\Users\<username>\AppData\Roaming\cura\4.7\plugins\QidiPrint`
 
-Be careful, the unzipper often tacks on the name of the zip as a folder at the
-bottom and you don't want it nested.  You want the files to show up in that
-folder.
-
-Make sure that the plugin folder name is a listed above and it does not have
-any trailing version numbers (`-1.0.0`) or similar.
+  * Windows: `%USERPROFILE%\AppData\Roaming\cura\4.7\plugins\`
+  * MacOS: `~/Library/Application Support/Cura/4.7/plugins/`
+  * Linux: `/home/<username>/.local/share/cura/4.7/plugins/`
 
 ## Configuration
 
@@ -46,6 +44,6 @@ should be the big blue button with you printer name on it!
 
 This project is using code from:
 * https://github.com/Kriechi/Cura-DuetRRFPlugin
-* https://github.com/Spanni26/ChituCodeWriter
+* ChituCodeWriter.py is taken from https://github.com/Spanni26/ChituCodeWriter
 
 

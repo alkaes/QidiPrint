@@ -21,6 +21,7 @@ from UM.Mesh.MeshWriter import MeshWriter
 from UM.PluginRegistry import PluginRegistry
 from UM.OutputDevice.OutputDevice import OutputDevice
 from UM.OutputDevice import OutputDeviceError
+from UM.Platform import Platform
 
 from UM.i18n import i18nCatalog
 from .ChituCodeWriter import ChituCodeWriter
@@ -66,8 +67,7 @@ class QidiPrintOutputDevice(OutputDevice):
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
 
-        self._localTempGcode = Resources.getStoragePath(
-            Resources.Resources, 'data.gcode')
+        self._localTempGcode = Resources.getStoragePath(Resources.Resources, 'data.gcode')
         self._send_thread = None
         self._file_encode = 'utf-8'
 
@@ -91,27 +91,22 @@ class QidiPrintOutputDevice(OutputDevice):
             raise OutputDeviceError.DeviceBusyError()
 
         if fileName:
-            fileName = os.path.splitext(fileName)[0] + '.gcode.tz'
+            fileName = os.path.splitext(fileName)[0]
         else:
-            fileName = "%s.gcode.tz" % Application.getInstance().getPrintInformation().jobName
+            fileName = "%s" % Application.getInstance().getPrintInformation().jobName
         self.targetSendFileName = fileName
 
-        path = os.path.join(os.path.dirname(
-            os.path.abspath(__file__)), 'UploadFilename.qml')
-        self._dialog = CuraApplication.getInstance(
-        ).createQmlComponent(path, {"manager": self})
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'UploadFilename.qml')
+        self._dialog = CuraApplication.getInstance().createQmlComponent(path, {"manager": self})
         self._dialog.textChanged.connect(self.onFilenameChanged)
         self._dialog.accepted.connect(self.onFilenameAccepted)
         self._dialog.show()
-        self._dialog.findChild(QObject, "nameField").setProperty(
-            'text', self.targetSendFileName)
-        self._dialog.findChild(QObject, "nameField").select(
-            0, len(self.targetSendFileName) - 9)
+        self._dialog.findChild(QObject, "nameField").setProperty('text', self.targetSendFileName)
+        self._dialog.findChild(QObject, "nameField").select(0, len(self.targetSendFileName))
         self._dialog.findChild(QObject, "nameField").setProperty('focus', True)
 
     def onFilenameChanged(self):
-        fileName = self._dialog.findChild(
-            QObject, "nameField").property('text').strip()
+        fileName = self._dialog.findChild(QObject, "nameField").property('text').strip()
         forbidden_characters = "\"'´`<>()[]?*\,;:&%#$!"
         for forbidden_character in forbidden_characters:
             if forbidden_character in fileName:
@@ -138,7 +133,6 @@ class QidiPrintOutputDevice(OutputDevice):
         if not fp:
             self._result = SendResult.FILE_NOT_SAVE
         else:
-            #writer = cast(MeshWriter, PluginRegistry.getInstance().getPluginObject("ChituCodeWriter"))
             writer = ChituCodeWriter()
             success = writer.write(fp, None, MeshWriter.OutputMode.TextMode)
             fp.close()
@@ -160,8 +154,7 @@ class QidiPrintOutputDevice(OutputDevice):
                         if tryCnt > 3:
                             self._result = SendResult.CONNECT_TIMEOUT
                             break
-                        self.sock.sendto(self.encodeCmd(
-                            'M4001\r\n'), (self._targetIP, self.PORT))
+                        self.sock.sendto(self.encodeCmd('M4001\r\n'), (self._targetIP, self.PORT))
                         message, address = self.sock.recvfrom(self.RECVBUF)
                         Logger.log('d', message)
                         break
@@ -175,12 +168,16 @@ class QidiPrintOutputDevice(OutputDevice):
                     break
                 if self._abort:
                     break
-                filePath = self._localTempGcode + '.tz'
-                Logger.log('d', 'compressed file path: ' + filePath)
+                if os.path.exists(self._localTempGcode + '.tz'):
+                    filePath = self._localTempGcode + '.tz'
+                    self.targetSendFileName = self.targetSendFileName + '.gcode.tz'                    
+                else:
+                    filePath = self._localTempGcode
+                    self.targetSendFileName = self.targetSendFileName + '.gcode'
+                Logger.log('d', 'file path: ' + filePath)
                 try:
                     self.sendMax = os.path.getsize(filePath)
-                    Logger.log('d', 'compressed file size: ' +
-                               str(self.sendMax))
+                    Logger.log('d', 'file size: ' + str(self.sendMax))
                     if self.sendMax == 0:
                         self._result = SendResult.FILE_EMPTY
                         break
@@ -197,8 +194,7 @@ class QidiPrintOutputDevice(OutputDevice):
                     fp.seek(0, 0)
                     cmd = 'M28 ' + self.targetSendFileName
                     Logger.log('d', 'cmd:' + cmd)
-                    self.sock.sendto(self.encodeCmd(
-                        cmd), (self._targetIP, self.PORT))
+                    self.sock.sendto(self.encodeCmd(cmd), (self._targetIP, self.PORT))
                     message, address = self.sock.recvfrom(self.RECVBUF)
                     message = message.decode('utf-8', 'replace')
                     Logger.log('d', 'message: ' + message)
@@ -218,7 +214,7 @@ class QidiPrintOutputDevice(OutputDevice):
                                 break
                             data = fp.read(self.BUFSIZE)
                             if not data:
-                                Logger.log('f', 'reach file end')
+                                Logger.log('d', 'reach file end')
                                 if finishedCnt >= 50 or not lastDataArray:
                                     break
                                 dataArray = lastDataArray
@@ -249,8 +245,7 @@ class QidiPrintOutputDevice(OutputDevice):
                                 dataArray[datSize + 5] = 131
                                 lastDataArray = dataArray
 
-                            self.sock.sendto(
-                                dataArray, (self._targetIP, self.PORT))
+                            self.sock.sendto(dataArray, (self._targetIP, self.PORT))
                             message, address = self.sock.recvfrom(self.RECVBUF)
                             timeoutCnt = 0
                             message = message.decode('utf-8', 'replace')
@@ -271,14 +266,12 @@ class QidiPrintOutputDevice(OutputDevice):
                                     value = value[0].replace('resend ', '')
                                     oldseek = offset = int(value)
                                     fp.seek(offset, 0)
-                                    Logger.log(
-                                        'd', 'resend offset:' + str(offset))
+                                    Logger.log('d', 'resend offset:' + str(offset))
                                 else:
                                     Logger.log('d', 'Error offset:' + message)
                         except timeout:
                             if finishedCnt < 4 and timeoutCnt > 150 or finishedCnt > 45:
-                                Logger.log(
-                                    'w', 'finishedCnt: ' + str(finishedCnt) + ' timeoutcnt: ' + str(timeoutCnt))
+                                Logger.log('w', 'finishedCnt: ' + str(finishedCnt) + ' timeoutcnt: ' + str(timeoutCnt))
                                 self._result = SendResult.CONNECT_TIMEOUT
                                 break
                             timeoutCnt += 1
@@ -287,7 +280,10 @@ class QidiPrintOutputDevice(OutputDevice):
                             self._abort = True
 
                     fp.close()
-                    os.remove(filePath)
+                    if os.path.exists(filePath):
+                        os.remove(filePath)
+                    if os.path.exists(self._localTempGcode):
+                        os.remove(self._localTempGcode)
                 break
 
             if not self._abort and self._result == SendResult.SEND_RUNNING:
@@ -295,8 +291,7 @@ class QidiPrintOutputDevice(OutputDevice):
                 tryCnt = 0
                 while True:
                     try:
-                        self.sock.sendto(self.encodeCmd(
-                            'M29'), (self._targetIP, self.PORT))
+                        self.sock.sendto(self.encodeCmd('M29'), (self._targetIP, self.PORT))
                         message, address = self.sock.recvfrom(self.RECVBUF)
                         message = message.decode('utf-8', 'replace')
                         Logger.log('d', 'M29 rcv:' + message)
@@ -328,8 +323,7 @@ class QidiPrintOutputDevice(OutputDevice):
                     break
                 self.sock.settimeout(2)
                 Logger.log('d', self._targetIP)
-                self.sock.sendto(self.encodeCmd('M4001'),
-                                 (self._targetIP, self.PORT))
+                self.sock.sendto(self.encodeCmd('M4001'), (self._targetIP, self.PORT))
                 message, address = self.sock.recvfrom(self.BUFSIZE)
                 pattern = re.compile(self.datamask)
                 msg = message.decode('utf-8', 'ignore')
@@ -364,15 +358,25 @@ class QidiPrintOutputDevice(OutputDevice):
                                 s_z_max = _[3]
                         elif id == 'U':
                             self._file_encode = value.replace("'", '')
-                exePath = os.path.join(os.path.dirname(
-                    os.path.abspath(__file__)), 'VC_compress_gcode.exe')
-                cmd = '"' + exePath + '"' + ' "' + self._localTempGcode + '" ' + x_mm_per_step + ' ' + y_mm_per_step + ' ' + z_mm_per_step + ' ' + \
-                    e_mm_per_step + ' "' + \
-                    os.path.dirname(self._localTempGcode) + '" ' + s_x_max + \
-                    ' ' + s_y_max + ' ' + s_z_max + ' ' + s_machine_type
-                Logger.log('d', cmd)
-                ret = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
-                Logger.log('d', ret.stdout.read().decode('utf-8', 'ignore'))
+                try:
+                    if Platform.isWindows():
+                        exePath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VC_compress_gcode.exe')
+                    elif Platform.isOSX():
+                        exePath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VC_compress_gcode_MAC')
+                        if not os.path.exists(exePath):
+                            exePath = './VC_compress_gcode_MAC'
+                    else:
+                        Logger.log('e', "Could not apply gcode compression")
+                        break
+                    cmd = '"' + exePath + '"' + ' "' + self._localTempGcode + '" ' + x_mm_per_step + ' ' + y_mm_per_step + ' ' + z_mm_per_step + ' ' + \
+                        e_mm_per_step + ' "' + \
+                        os.path.dirname(self._localTempGcode) + '" ' + s_x_max + \
+                        ' ' + s_y_max + ' ' + s_z_max + ' ' + s_machine_type
+                    Logger.log('d', cmd)
+                    ret = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+                    Logger.log('d', ret.stdout.read().decode('utf-8', 'ignore'))
+                except:
+                    Logger.log('e', "Could not apply gcode compression")
                 break
             except timeout:
                 tryCnt += 1
@@ -410,12 +414,9 @@ class QidiPrintOutputDevice(OutputDevice):
             return
 
         if self._result == SendResult.SEND_DONE:
-            self._message = Message(catalog.i18nc(
-                "@info:status", "Do you wish to print now?"), title=catalog.i18nc("@label", "SUCCESS"))
-            self._message.addAction("YES", catalog.i18nc(
-                "@action:button", "YES"), None, "")
-            self._message.addAction("NO", catalog.i18nc(
-                "@action:button", "NO"), None, "")
+            self._message = Message(catalog.i18nc("@info:status", "Do you wish to print now?"), title=catalog.i18nc("@label", "SUCCESS"))
+            self._message.addAction("YES", catalog.i18nc("@action:button", "YES"), None, "")
+            self._message.addAction("NO", catalog.i18nc("@action:button", "NO"), None, "")
             self._message.actionTriggered.connect(self._onActionTriggered)
             self._message.show()
             self.writeSuccess.emit(self)
@@ -430,8 +431,7 @@ class QidiPrintOutputDevice(OutputDevice):
             self.writeError.emit(self)
             result_msg = self._errorMsg
             if 'create file' in self._errorMsg:
-                m = Message(catalog.i18nc(
-                    '@info:status', ' Write error,please check that the SD card /U disk has been inserted'), lifetime=0)
+                m = Message(catalog.i18nc('@info:status', ' Write error, please check that the SD card /U disk has been inserted'), lifetime=0)
                 m.show()
         elif self._result == SendResult.FILE_EMPTY:
             self.writeError.emit(self)
@@ -446,29 +446,22 @@ class QidiPrintOutputDevice(OutputDevice):
             self.writeError.emit(self)
             result_msg = "Cannot start print"
 
-        self._message = Message(catalog.i18nc(
-            "@info:status", result_msg), title=catalog.i18nc("@label", "FAILURE"))
+        self._message = Message(catalog.i18nc("@info:status", result_msg), title=catalog.i18nc("@label", "FAILURE"))
         self._message.show()
         self._stage = OutputStage.ready
         Logger.log('e', result_msg)
 
     def onFilenameAccepted(self):
-        self.targetSendFileName = self._dialog.findChild(
-            QObject, "nameField").property('text').strip()
-        if not self.targetSendFileName.endswith('.gcode.tz') and '.' not in self.targetSendFileName:
-            self.targetSendFileName += '.gcode.tz'
-        Logger.log("d", self._name + " | Filename set to: " +
-                   self.targetSendFileName)
+        self.targetSendFileName = self._dialog.findChild(QObject, "nameField").property('text').strip()
+        Logger.log("d", self._name + " | Filename set to: " + self.targetSendFileName)
         self._dialog.deleteLater()
 
         self._message = Message(
-            catalog.i18nc("@info:status",
-                          "Uploading to {}").format(self._name),
+            catalog.i18nc("@info:status", "Uploading to {}").format(self._name),
             title=catalog.i18nc("@label", self._PluginName),
             progress=-1, lifetime=0, dismissable=False, use_inactivity_timer=False
         )
-        self._message.addAction("ABORT", catalog.i18nc(
-            "@action:button", "Cancel"), None, "")
+        self._message.addAction("ABORT", catalog.i18nc("@action:button", "Cancel"), None, "")
         self._message.actionTriggered.connect(self._onActionTriggered)
         self._message.show()
 
@@ -492,8 +485,7 @@ class QidiPrintOutputDevice(OutputDevice):
                 try:
                     cmd = 'M6030 ":' + self.targetSendFileName + '" I1'
                     Logger.log('i', 'Start print: ' + cmd)
-                    self.sock.sendto(self.encodeCmd(
-                        cmd), (self._targetIP, self.PORT))
+                    self.sock.sendto(self.encodeCmd(cmd), (self._targetIP, self.PORT))
                     message, address = self.sock.recvfrom(self.RECVBUF)
                     message = message.decode('utf-8', 'replace')
                     if 'Error' in message:
