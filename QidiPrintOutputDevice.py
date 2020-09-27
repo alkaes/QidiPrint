@@ -4,13 +4,18 @@ from time import time, sleep
 
 import subprocess, re, threading, platform, struct, traceback, sys, base64, json, urllib
 from typing import cast, Any, Callable, Dict, List, Optional
-from socket import *
 
 from PyQt5.QtCore import QFile, QUrl, QObject, QCoreApplication, QByteArray, QTimer, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtQml import QQmlComponent, QQmlContext
+from timeit import default_timer as Timer
 
 from cura.CuraApplication import CuraApplication
+from cura.PrinterOutput.PrinterOutputDevice import PrinterOutputDevice, ConnectionState, ConnectionType
+from cura.PrinterOutput.Models.PrinterOutputModel import PrinterOutputModel
+from cura.PrinterOutput.Models.PrintJobOutputModel import PrintJobOutputModel
+from cura.PrinterOutput.GenericOutputController import GenericOutputController
+
 from UM.Resources import Resources
 import UM.Qt.ListModel
 
@@ -22,9 +27,18 @@ from UM.PluginRegistry import PluginRegistry
 from UM.OutputDevice.OutputDevice import OutputDevice
 from UM.OutputDevice import OutputDeviceError
 from UM.Platform import Platform
+from UM.Signal import signalemitter
+from UM.Job import Job
 
 from UM.i18n import i18nCatalog
 from .ChituCodeWriter import ChituCodeWriter
+
+from .QidiConnectionManager import QidiConnectionManager, QidiResult
+
+from queue import Queue
+from threading import Thread, Event
+from time import time
+from typing import Union, Optional, List, cast, TYPE_CHECKING
 
 catalog = i18nCatalog("cura")
 
@@ -34,69 +48,157 @@ class OutputStage(Enum):
     writing = 1
 
 
-class SendResult(Enum):
-    SEND_DONE = 0
-    CONNECT_TIMEOUT = 1
-    WRITE_ERROR = 2
-    FILE_EMPTY = 3
-    FILE_NOT_OPEN = 4
-    SEND_RUNNING = 5
-    FILE_NOT_SAVE = 6
-    CANNOT_START_PRINT = 7
+class QidiPrintOutputDevice(PrinterOutputDevice):
+    printerStatusChanged = pyqtSignal()
 
-
-class QidiPrintOutputDevice(OutputDevice):
-
-    def __init__(self, name, target_ip):
-        description = catalog.i18nc(
-            "@action:button", "Send to {0}").format(name)
-
-        super().__init__(name)
-        self.setShortDescription(description)
-        self.setDescription(description)
-        self.setPriority(10)
-        self._name = name
+    def __init__(self, name, address):
+        super().__init__(name, connection_type=ConnectionType.NetworkConnection)
+        self.setShortDescription(catalog.i18nc("@action:button Preceded by 'Ready to'.", "Send to " + name))
+        self.setDescription(catalog.i18nc("@info:tooltip",  "Send to " + name))
+        self.setConnectionText(catalog.i18nc("@info:status", "Connected via Network"))
+        self.setName(name)
+        self.setIconName("print")
+        self._properties = {}
+        self._address = address
         self._PluginName = 'QIDI Print'
+        self.setPriority(3)
 
-        self.PORT = 3000
-        self.BUFSIZE = 1280
-        self.RECVBUF = 1280
-        self.targetSendFileName = None
-        self.progress = 0
-        self.sendMax = 0
-        self.sock = socket(AF_INET, SOCK_DGRAM)
-        self.sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+        self._update_timer.setInterval(1000)
 
+        self._output_controller = GenericOutputController(self)
+        self._output_controller.setCanUpdateFirmware(False)
+
+        # Set when print is started in order to check running time.
+        self._print_start_time = None  # type: Optional[float]
+        self._print_estimated_time = None  # type: Optional[int]
+
+        self._accepts_commands = True   # from PrinterOutputDevice
+
+        self._monitor_view_qml_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'qml', 'MonitorItem.qml')
         self._localTempGcode = Resources.getStoragePath(Resources.Resources, 'data.gcode')
-        self._send_thread = None
-        self._file_encode = 'utf-8'
 
-        self._update_timer = QTimer()
-        self._update_timer.setInterval(100)
-        self._update_timer.setSingleShot(False)
-        self._update_timer.timeout.connect(self._update)
+        self._qidi = QidiConnectionManager(self._address, self._localTempGcode, False)
+        self._qidi.progressChanged.connect(self._update_progress)
+        self._qidi.conectionStateChanged.connect(self._conectionStateChanged)
+        self._qidi.updateDone.connect(self._update_status)
 
         self._stage = OutputStage.ready
-        self._targetIP = target_ip
 
         Logger.log("d", self._name + " | New QidiPrintOutputDevice created")
-        Logger.log("d", self._name + " | IP: " + self._targetIP)
+        Logger.log("d", self._name + " | IP: " + self._address)
 
         if hasattr(self, '_message'):
             self._message.hide()
         self._message = None
 
+    def _update_progress(self, progress):
+        if self._message:
+            self._message.setProgress(int(progress))
+        self.writeProgress.emit(self, progress)
+
+    def _conectionStateChanged(self, new_state):
+        if new_state == True:
+            container_stack = CuraApplication.getInstance().getGlobalContainerStack()
+            num_extruders = container_stack.getProperty("machine_extruder_count", "value")
+            # Ensure that a printer is created.
+            printer = PrinterOutputModel(output_controller=self._output_controller, number_of_extruders=num_extruders, firmware_version=self.firmwareVersion)
+            printer.updateName(container_stack.getName())
+            self._printers = [printer]
+            self.setConnectionState(ConnectionState.Connected)
+            self.printersChanged.emit()
+        else:
+            #self._printers = None
+            self.setConnectionState(ConnectionState.Connecting)
+            if self.printers[0]:
+                self.printers[0].updateState("offline")
+
+    def _update(self):
+        if self._qidi._connected == False:
+            Thread(target=self._qidi.connect, daemon=True, name="Qidi Connect").start()
+            self.printerStatusChanged.emit()
+            return
+        if self.connectionState != ConnectionState.Connected:
+            self.setConnectionState(ConnectionState.Connected)
+        Thread(target=self._qidi.update, daemon=True, name="Qidi Update").start()
+
+    def close(self):
+        super().close()
+        if self._message:
+            self._message.hide()
+        self.printerStatusChanged.emit()
+
+    def pausePrint(self):
+        self.sendCommand("M25")
+
+    def resumePrint(self):
+        self.sendCommand("M24")
+
+    def cancelPrint(self):
+        self.sendCommand("M33")
+
+    def _update_status(self):
+        printer = self.printers[0]
+        status = self._qidi._status
+        if "bed_nowtemp" in status:
+            printer.updateBedTemperature(int(status["bed_nowtemp"]))
+        if "bed_targettemp" in status:
+            printer.updateTargetBedTemperature(int(status["bed_targettemp"]))
+
+        extruder = printer.extruders[0]
+        if "e1_nowtemp" in status:
+            extruder.updateHotendTemperature(int(status["e1_nowtemp"]))
+        if "e1_targettemp" in status:
+            extruder.updateTargetHotendTemperature(int(status["e1_targettemp"]))
+
+        if len(printer.extruders) > 1:
+            extruder = printer.extruders[1]
+            if "e2_nowtemp" in status:
+                extruder.updateHotendTemperature(int(status["e2_nowtemp"]))
+            if "e2_targettemp" in status:
+                extruder.updateTargetHotendTemperature(int(status["e2_targettemp"]))
+
+        if self._qidi._isPrinting:
+            if printer.activePrintJob is None:
+                print_job = PrintJobOutputModel(output_controller=self._output_controller)
+                printer.updateActivePrintJob(print_job)
+            else:
+                print_job = printer.activePrintJob
+            elapsed = self._qidi._printing_time
+            print_job.updateTimeElapsed(int(self._qidi._printing_time))
+            print_job.updateName(self._qidi._printing_filename)
+
+            if self._qidi._print_total > 0:
+                progress = float(self._qidi._print_now) / float(self._qidi._print_total)
+                if progress > 0:
+                    print_job.updateTimeTotal(int(self._qidi._printing_time / progress))
+            if self._qidi._isIdle:
+                job_state = 'paused'
+            else:
+                job_state = 'printing'
+            print_job.updateState(job_state)
+        else:
+            if printer.activePrintJob:
+                printer.updateActivePrintJob(None)
+            job_state = 'idle'
+            print_job = None
+
+        printer.updateState(job_state)
+        self.printerStatusChanged.emit()
+
     def requestWrite(self, node, fileName=None, *args, **kwargs):
-        if self._stage != OutputStage.ready:
+        if self._stage != OutputStage.ready or self._qidi._isPrinting:
+            Message(catalog.i18nc('@info:status', 'Cannot Print, printer is busy'), title=catalog.i18nc("@info:title", "BUSY")).show()
             raise OutputDeviceError.DeviceBusyError()
 
+        # Make sure post-processing plugin are run on the gcode
+        self.writeStarted.emit(self)
         if fileName:
             fileName = os.path.splitext(fileName)[0]
         else:
             fileName = "%s" % Application.getInstance().getPrintInformation().jobName
         self.targetSendFileName = fileName
 
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'UploadFilename.qml')
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'qml', 'UploadFilename.qml')
         self._dialog = CuraApplication.getInstance().createQmlComponent(path, {"manager": self})
         self._dialog.textChanged.connect(self.onFilenameChanged)
         self._dialog.accepted.connect(self.onFilenameAccepted)
@@ -122,333 +224,58 @@ class QidiPrintOutputDevice(OutputDevice):
         self._dialog.setProperty('validName', len(fileName) > 0)
         self._dialog.setProperty('validationError', 'Filename too short')
 
-    def encodeCmd(self, cmd):
-        return cmd.encode(self._file_encode, 'ignore')
-
-    def decodeCmd(self, cmd):
-        return cmd.decode(self._file_encode, 'ignore')
-
-    def _genTempGcodeFile(self):
-        fp = open(self._localTempGcode, 'w+', buffering=1)
-        if not fp:
-            self._result = SendResult.FILE_NOT_SAVE
-        else:
-            writer = ChituCodeWriter()
-            success = writer.write(fp, None, MeshWriter.OutputMode.TextMode)
-            fp.close()
-            if not success:
-                self._result = SendResult.FILE_NOT_SAVE
-
-    def sendDatThread(self):
-        Logger.log('i', '==========start send file============')
-        try:
-            while True:
-                oldseek = 0
-                self.sock.settimeout(2)
-                Logger.log('i', 'targetIP:' + self._targetIP)
-                tryCnt = 0
-                while True:
-                    try:
-                        if self._abort:
-                            break
-                        if tryCnt > 3:
-                            self._result = SendResult.CONNECT_TIMEOUT
-                            break
-                        self.sock.sendto(self.encodeCmd('M4001\r\n'), (self._targetIP, self.PORT))
-                        message, address = self.sock.recvfrom(self.RECVBUF)
-                        Logger.log('d', message)
-                        break
-                    except timeout:
-                        Logger.log('w', 'Socket M4001 timeout ')
-                    except:
-                        tryCnt += 1
-                        traceback.print_exc()
-
-                if self._result != SendResult.SEND_RUNNING:
-                    break
-                if self._abort:
-                    break
-                if os.path.exists(self._localTempGcode + '.tz'):
-                    filePath = self._localTempGcode + '.tz'
-                    self.targetSendFileName = self.targetSendFileName + '.gcode.tz'                    
-                else:
-                    filePath = self._localTempGcode
-                    self.targetSendFileName = self.targetSendFileName + '.gcode'
-                Logger.log('d', 'file path: ' + filePath)
-                try:
-                    self.sendMax = os.path.getsize(filePath)
-                    Logger.log('d', 'file size: ' + str(self.sendMax))
-                    if self.sendMax == 0:
-                        self._result = SendResult.FILE_EMPTY
-                        break
-                    fp = open(filePath, 'rb', buffering=1)
-                    if not fp:
-                        self._result = SendResult.FILE_NOT_OPEN
-                        Logger.log('e', '==error open file %s', filePath)
-                        break
-                except Exception as e:
-                    Logger.log('w', str(e))
-                    self._result = SendResult.FILE_EMPTY
-                    break
-                else:
-                    fp.seek(0, 0)
-                    cmd = 'M28 ' + self.targetSendFileName
-                    Logger.log('d', 'cmd:' + cmd)
-                    self.sock.sendto(self.encodeCmd(cmd), (self._targetIP, self.PORT))
-                    message, address = self.sock.recvfrom(self.RECVBUF)
-                    message = message.decode('utf-8', 'replace')
-                    Logger.log('d', 'message: ' + message)
-                    if 'Error' in message:
-                        self._result = SendResult.WRITE_ERROR
-                        self._errorMsg = message
-                        break
-                    self.sock.settimeout(0.1)
-                    lastProgress = 0
-                    lastDataArray = None
-                    finishedCnt = 0
-                    timeoutCnt = 0
-                    finishedRcvOkCnt = 0
-                    while True:
-                        try:
-                            if self._abort:
-                                break
-                            data = fp.read(self.BUFSIZE)
-                            if not data:
-                                Logger.log('d', 'reach file end')
-                                if finishedCnt >= 50 or not lastDataArray:
-                                    break
-                                dataArray = lastDataArray
-                                sleep(0.33)
-                                finishedCnt += 1
-                            else:
-                                finishedRcvOkCnt = finishedCnt = 0
-                                check_sum = 0
-                                data += self.encodeCmd('000000')
-                                dataArray = bytearray(data)
-                                seek = fp.tell()
-                                seekArray = struct.pack('>I', oldseek)
-                                oldseek = seek
-                                if int(100 * seek / self.sendMax) > int(100 * lastProgress):
-                                    lastProgress = seek / self.sendMax
-                                    self.progress = int(100 * lastProgress)
-                                datSize = len(dataArray) - 6
-                                if datSize <= 0:
-                                    break
-                                dataArray[datSize] = seekArray[3]
-                                dataArray[datSize + 1] = seekArray[2]
-                                dataArray[datSize + 2] = seekArray[1]
-                                dataArray[datSize + 3] = seekArray[0]
-                                for i in range(0, datSize + 4, 1):
-                                    check_sum ^= dataArray[i]
-
-                                dataArray[datSize + 4] = check_sum
-                                dataArray[datSize + 5] = 131
-                                lastDataArray = dataArray
-
-                            self.sock.sendto(dataArray, (self._targetIP, self.PORT))
-                            message, address = self.sock.recvfrom(self.RECVBUF)
-                            timeoutCnt = 0
-                            message = message.decode('utf-8', 'replace')
-                            if 'ok' in message:
-                                if finishedRcvOkCnt > 3:
-                                    break
-                                elif finishedCnt:
-                                    finishedRcvOkCnt += 1
-                                else:
-                                    continue
-
-                            elif 'Error' in message:
-                                self._result = SendResult.WRITE_ERROR
-                                break
-                            elif 'resend' in message:
-                                value = re.findall('resend \\d+', message)
-                                if value:
-                                    value = value[0].replace('resend ', '')
-                                    oldseek = offset = int(value)
-                                    fp.seek(offset, 0)
-                                    Logger.log('d', 'resend offset:' + str(offset))
-                                else:
-                                    Logger.log('d', 'Error offset:' + message)
-                        except timeout:
-                            if finishedCnt < 4 and timeoutCnt > 150 or finishedCnt > 45:
-                                Logger.log('w', 'finishedCnt: ' + str(finishedCnt) + ' timeoutcnt: ' + str(timeoutCnt))
-                                self._result = SendResult.CONNECT_TIMEOUT
-                                break
-                            timeoutCnt += 1
-                        except:
-                            traceback.print_exc()
-                            self._abort = True
-
-                    fp.close()
-                    if os.path.exists(filePath):
-                        os.remove(filePath)
-                    if os.path.exists(self._localTempGcode):
-                        os.remove(self._localTempGcode)
-                break
-
-            if not self._abort and self._result == SendResult.SEND_RUNNING:
-                self.sock.settimeout(2)
-                tryCnt = 0
-                while True:
-                    try:
-                        self.sock.sendto(self.encodeCmd('M29'), (self._targetIP, self.PORT))
-                        message, address = self.sock.recvfrom(self.RECVBUF)
-                        message = message.decode('utf-8', 'replace')
-                        Logger.log('d', 'M29 rcv:' + message)
-                        if 'Error' in message:
-                            self._result = SendResult.WRITE_ERROR
-                            break
-                        else:
-                            self._result = SendResult.SEND_DONE
-                            break
-                    except:
-                        tryCnt += 1
-                        Logger.log('i', 'Try to Close file')
-                        if tryCnt > 6:
-                            self._result = SendResult.CONNECT_TIMEOUT
-                            break
-
-        except:
-            self._result = SendResult.WRITE_ERROR
-            traceback.print_exc()
-
-    def dataCompressThread(self):
-        Logger.log('i', '========start compress file=========')
-        self.datamask = '[0-9]{1,12}\\.[0-9]{1,12}'
-        self.maxmask = '[0-9]'
-        tryCnt = 0
-        while True:
-            try:
-                if self._abort:
-                    break
-                self.sock.settimeout(2)
-                Logger.log('d', self._targetIP)
-                self.sock.sendto(self.encodeCmd('M4001'), (self._targetIP, self.PORT))
-                message, address = self.sock.recvfrom(self.BUFSIZE)
-                pattern = re.compile(self.datamask)
-                msg = message.decode('utf-8', 'ignore')
-                if 'X' not in msg or 'Y' not in msg or 'Z' not in msg:
-                    continue
-                msg = msg.replace('\r', '')
-                msg = msg.replace('\n', '')
-                msgs = msg.split(' ')
-                Logger.log('d', msg)
-                e_mm_per_step = z_mm_per_step = y_mm_per_step = x_mm_per_step = '0.0'
-                s_machine_type = s_x_max = s_y_max = s_z_max = '0.0'
-                for item in msgs:
-                    _ = item.split(':')
-                    if len(_) == 2:
-                        id = _[0]
-                        value = _[1]
-                        Logger.log('d', _)
-                        if id == 'X':
-                            x_mm_per_step = value
-                        elif id == 'Y':
-                            y_mm_per_step = value
-                        elif id == 'Z':
-                            z_mm_per_step = value
-                        elif id == 'E':
-                            e_mm_per_step = value
-                        elif id == 'T':
-                            _ = value.split('/')
-                            if len(_) == 5:
-                                s_machine_type = _[0]
-                                s_x_max = _[1]
-                                s_y_max = _[2]
-                                s_z_max = _[3]
-                        elif id == 'U':
-                            self._file_encode = value.replace("'", '')
-                try:
-                    if Platform.isWindows():
-                        exePath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VC_compress_gcode.exe')
-                    elif Platform.isOSX():
-                        exePath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VC_compress_gcode_MAC')
-                        if not os.path.exists(exePath):
-                            exePath = './VC_compress_gcode_MAC'
-                    else:
-                        Logger.log('e', "Could not apply gcode compression")
-                        break
-                    cmd = '"' + exePath + '"' + ' "' + self._localTempGcode + '" ' + x_mm_per_step + ' ' + y_mm_per_step + ' ' + z_mm_per_step + ' ' + \
-                        e_mm_per_step + ' "' + \
-                        os.path.dirname(self._localTempGcode) + '" ' + s_x_max + \
-                        ' ' + s_y_max + ' ' + s_z_max + ' ' + s_machine_type
-                    Logger.log('d', cmd)
-                    ret = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
-                    Logger.log('d', ret.stdout.read().decode('utf-8', 'ignore'))
-                except:
-                    Logger.log('e', "Could not apply gcode compression")
-                break
-            except timeout:
-                tryCnt += 1
-                if tryCnt > 2:
-                    self._result = SendResult.CONNECT_TIMEOUT
-                    break
-            except:
-                traceback.print_exc()
-                break
-
     def startSendingThread(self):
         Logger.log('i', '=============QIDI SEND BEGIN============')
         self._errorMsg = ''
 
-        self._abort = False
+        self._qidi._abort = False
         self._stage = OutputStage.writing
-        self.writeStarted.emit(self)
 
-        if self._result == SendResult.SEND_RUNNING:
-            self.dataCompressThread()
-            if self._result == SendResult.SEND_RUNNING:                
-                self.sendDatThread()
-
+        res = self._qidi.sendfile(self.targetSendFileName)
         if self._message:
             self._message.hide()
             self._message = None  # type:Optional[Message]
-
         self.writeFinished.emit(self)
+
         self._stage = OutputStage.ready
 
-        if self._abort:
-            self._stage = OutputStage.ready
-            Message(catalog.i18nc('@info:status', 'Upload Canceled'),
-                    title=catalog.i18nc("@info:title", "ABORTED")).show()
-            return
-
-        if self._result == SendResult.SEND_DONE:
-            self._message = Message(catalog.i18nc("@info:status", "Do you wish to print now?"), title=catalog.i18nc("@label", "SUCCESS"))
-            self._message.addAction("YES", catalog.i18nc("@action:button", "YES"), None, "")
-            self._message.addAction("NO", catalog.i18nc("@action:button", "NO"), None, "")
-            self._message.actionTriggered.connect(self._onActionTriggered)
-            self._message.show()
+        if res == QidiResult.SUCCES:
+            if self._autoPrint is False:
+                self._message = Message(catalog.i18nc("@info:status", "Do you wish to print now?"), title=catalog.i18nc("@label", "SUCCESS"))
+                self._message.addAction("PRINT", catalog.i18nc("@action:button", "YES"), None, "")
+                self._message.addAction("NO", catalog.i18nc("@action:button", "NO"), None, "")
+                self._message.actionTriggered.connect(self._onActionTriggered)
+                self._message.show()
+            else:
+                self._onActionTriggered(self._message, "PRINT")
             self.writeSuccess.emit(self)
             self._stage = OutputStage.ready
             return
 
+        self.writeError.emit(self)
+        if res == QidiResult.ABORTED:
+            Message(catalog.i18nc('@info:status', 'Upload Canceled'),
+                    title=catalog.i18nc("@info:title", "ABORTED")).show()
+            return
+
         result_msg = "Unknown Error!!!"
-        if self._result == SendResult.CONNECT_TIMEOUT:
-            self.writeError.emit(self)
+        if self._result == QidiResult.TIMEOUT:
             result_msg = 'Connection timeout'
-        elif self._result == SendResult.WRITE_ERROR:
+        elif self._result == QidiResult.WRITE_ERROR:
             self.writeError.emit(self)
             result_msg = self._errorMsg
             if 'create file' in self._errorMsg:
                 m = Message(catalog.i18nc('@info:status', ' Write error, please check that the SD card /U disk has been inserted'), lifetime=0)
                 m.show()
-        elif self._result == SendResult.FILE_EMPTY:
+        elif self._result == QidiResult.FILE_EMPTY:
             self.writeError.emit(self)
             result_msg = 'File empty'
-        elif self._result == SendResult.FILE_NOT_OPEN:
+        elif self._result == QidiResult.FILE_NOT_OPEN:
             self.writeError.emit(self)
             result_msg = "Cannot Open File"
-        elif self._result == SendResult.FILE_NOT_SAVE:
-            self.writeError.emit(self)
-            result_msg = "Cannot Save File"
-        elif self._result == SendResult.CANNOT_START_PRINT:
-            self.writeError.emit(self)
-            result_msg = "Cannot start print"
 
         self._message = Message(catalog.i18nc("@info:status", result_msg), title=catalog.i18nc("@label", "FAILURE"))
         self._message.show()
-        self._stage = OutputStage.ready
         Logger.log('e', result_msg)
 
     def onFilenameAccepted(self):
@@ -456,54 +283,104 @@ class QidiPrintOutputDevice(OutputDevice):
         Logger.log("d", self._name + " | Filename set to: " + self.targetSendFileName)
         self._dialog.deleteLater()
 
-        self._message = Message(
-            catalog.i18nc("@info:status", "Uploading to {}").format(self._name),
-            title=catalog.i18nc("@label", self._PluginName),
-            progress=-1, lifetime=0, dismissable=False, use_inactivity_timer=False
-        )
-        self._message.addAction("ABORT", catalog.i18nc("@action:button", "Cancel"), None, "")
-        self._message.actionTriggered.connect(self._onActionTriggered)
-        self._message.show()
+        success = False
+        with open(self._localTempGcode, 'w+', buffering=1) as fp:
+            if fp:
+                writer = ChituCodeWriter()
+                success = writer.write(fp, None, MeshWriter.OutputMode.TextMode)
 
-        self._result = SendResult.SEND_RUNNING
-        self._genTempGcodeFile()
-
-        self._send_thread = threading.Thread(target=self.startSendingThread)
-        self._send_thread.daemon = True
-        self._send_thread.start()
-        self._update_timer.start()
+        if success:
+            self._message = Message(
+                catalog.i18nc("@info:status", "Uploading to {}").format(self._name),
+                title=catalog.i18nc("@label", "Print jobs"),
+                progress=-1, lifetime=0, dismissable=False, use_inactivity_timer=False, option_text="Auto Print", option_state=False
+            )
+            self._message.addAction("ABORT", catalog.i18nc("@action:button", "Cancel"), None, "")
+            self._message.actionTriggered.connect(self._onActionTriggered)
+            self._message.optionToggled.connect(self._onOptionStateChanged)
+            self._autoPrint = False
+            self._message.show()
+            Thread(target=self.startSendingThread, daemon=True, name=self._name + " File Send").start()
+        else:
+            self._message = Message(catalog.i18nc("@info:status", "Cannot create gcode file!"), title=catalog.i18nc("@label", "FAILURE"))
+            self._message.show()
 
     def _onActionTriggered(self, message, action):
-        self._update_timer.stop()
         if self._message:
             self._message.hide()
-            self._message = None  # type:Optional[Message]            
-        if action == "YES":
-            self.sock.settimeout(2)
-            tryCnt = 0
-            while True:
-                try:
-                    cmd = 'M6030 ":' + self.targetSendFileName + '" I1'
-                    Logger.log('i', 'Start print: ' + cmd)
-                    self.sock.sendto(self.encodeCmd(cmd), (self._targetIP, self.PORT))
-                    message, address = self.sock.recvfrom(self.RECVBUF)
-                    message = message.decode('utf-8', 'replace')
-                    if 'Error' in message:
-                        self._result = SendResult.CANNOT_START_PRINT
-                        break
-                    else:
-                        break
-                except:
-                    traceback.print_exc()
-                    tryCnt += 1
-                    if tryCnt > 6:
-                        self._result = SendResult.CONNECT_TIMEOUT
+            self._message = None  # type:Optional[Message]
+        if action == "PRINT":
+            res = self._qidi.print()
+            if res is not QidiResult.SUCCES:
+                Message(catalog.i18nc('@info:status', 'Cannot Print'), title=catalog.i18nc("@info:title", "FAILURE")).show()
+            else:
+                CuraApplication.getInstance().getController().setActiveStage("MonitorStage")
         elif action == "ABORT":
             Logger.log("i", "Stopping upload because the user pressed cancel.")
-            self._abort = True
+            self._qidi._abort = True
 
-    def _update(self):
-        if self._stage == OutputStage.writing and self._message:
-            self._message.setProgress(int(self.progress))
-            self._message.show()
-            self.writeProgress.emit(self, int(self.progress))
+    def _onOptionStateChanged(self, optstate):
+        self._autoPrint = bool(optstate)
+
+    def getProperties(self):
+        return self._properties
+
+    @pyqtSlot(str, result=str)
+    def getProperty(self, key):
+        key = key.encode("utf-8")
+        if key in self._properties:
+            return self._properties.get(key, b"").decode("utf-8")
+        else:
+            return ""
+
+    @pyqtSlot(str)
+    def sendCommand(self, cmd):
+        if isinstance(cmd, str):
+            self._qidi.sendCommand(cmd)
+        elif isinstance(cmd, list):
+            for eachCommand in cmd:
+                self._qidi.sendCommand(eachCommand)
+
+    @pyqtProperty(str, notify=printerStatusChanged)
+    def status(self):
+        return str(self._connection_state).split('.')[1]
+
+    @pyqtProperty(str, constant=True)
+    def name(self):
+        return self._name
+
+    @pyqtProperty(str, notify=printerStatusChanged)
+    def firmwareVersion(self):
+        return self.getFirmwareName()
+
+    def getFirmwareName(self):
+        return self._qidi._firmware_ver
+
+    @pyqtProperty(str, notify=printerStatusChanged)
+    def xPosition(self) -> bool:
+        if "x_pos" in self._qidi._status:
+            return self._qidi._status["x_pos"][:-1]
+        else:
+            return ""
+
+    @pyqtProperty(str, notify=printerStatusChanged)
+    def yPosition(self) -> bool:
+        if "y_pos" in self._qidi._status:
+            return self._qidi._status["y_pos"][:-1]
+        else:
+            return ""
+
+    @pyqtProperty(str, notify=printerStatusChanged)
+    def zPosition(self) -> bool:
+        if "z_pos" in self._qidi._status:
+            return self._qidi._status["z_pos"][:-1]
+        else:
+            return ""
+
+    @pyqtProperty(str, notify=printerStatusChanged)
+    def coolingFan(self) -> bool:
+        if "fan" in self._qidi._status:
+            fan = float(self._qidi._status["fan"])
+            return "{}".format(int(fan/2.55))
+        else:
+            return ""

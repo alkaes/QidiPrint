@@ -1,8 +1,10 @@
 # Cura-QidiPrint Plugin
 
-Plugin for Cura 4.7 that allows printing on QIDI 3D printers over network 
+## Plugin for Cura 4.7 that allows monitoring and printing Qidi 3D printers over network 
 
 ![Screenshot of the print button](/screenshots/print-button.png)
+
+![Screenshot of the monitor stage](/screenshots/monitor.png)
 
 ## Manual Installation
 
@@ -22,19 +24,17 @@ specific folder:
 QIDI printers are configured through the extension menu bar:
 
 * Start Cura
-* From the menu bar choose: Extensions -> QidiPrint -> QidiPrint Connections
+* Inside the cura Prefernces->Printers selct and activate your printer
+* Click "QidiPrint" button right to the Machine Settings button:
 
 ![Screenshot of the menu bar entry](/screenshots/menu-bar.png)
 
-* Click "Add"
+* A new window will pop-up with detected printers list (you also can add them manually by pressing the Add button)
 
-![Screenshot of the edit dialog](/screenshots/edit-dialog.png)
+![Screenshot of the discovery dialog](/screenshots/discovery-window.png)
 
-* Enter the name of your printer
-  - e.g., `X-MAKER`
-* Enter the IP of your printer
-  - e.g., `192.168.10.205`
-* Click "Ok"
+* Choose your printer and press the "Connect" button
+* Click "Close"
 * Done!
 
 Now you can load a model and slice it. Then look at the bottom right - there
@@ -42,8 +42,7 @@ should be the big blue button with you printer name on it!
 
 ## License
 
-This project is using code from:
+This project is inspired and using code from:
 * https://github.com/Kriechi/Cura-DuetRRFPlugin
+* https://github.com/Jeredian/mks-wifi-plugin
 * ChituCodeWriter.py is taken from https://github.com/Spanni26/ChituCodeWriter
-
-
