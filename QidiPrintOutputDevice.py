@@ -63,6 +63,11 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
         self._PluginName = 'QIDI Print'
         self.setPriority(3)
 
+        self._application = CuraApplication.getInstance()
+        self._preferences = Application.getInstance().getPreferences()
+        self._preferences.addPreference("QidiPrint/autoprint", False)
+        self._autoPrint = self._preferences.getValue("QidiPrint/autoprint")        
+
         self._update_timer.setInterval(1000)
 
         self._output_controller = GenericOutputController(self)
@@ -134,7 +139,8 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
         self.sendCommand("M24")
 
     def cancelPrint(self):
-        self.sendCommand("M33")
+        self._cancelPrint = True
+        self.sendCommand("M33")        
 
     def _update_status(self):
         printer = self.printers[0]
@@ -172,7 +178,10 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
                 if progress > 0:
                     print_job.updateTimeTotal(int(self._qidi._printing_time / progress))
             if self._qidi._isIdle:
-                job_state = 'paused'
+                if self._cancelPrint:
+                    job_state = 'aborting'
+                else:
+                    job_state = 'paused'
             else:
                 job_state = 'printing'
             print_job.updateState(job_state)
@@ -180,6 +189,7 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
             if printer.activePrintJob:
                 printer.updateActivePrintJob(None)
             job_state = 'idle'
+            self._cancelPrint = False
             print_job = None
 
         printer.updateState(job_state)
@@ -203,9 +213,10 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
         self._dialog.textChanged.connect(self.onFilenameChanged)
         self._dialog.accepted.connect(self.onFilenameAccepted)
         self._dialog.show()
+        self._dialog.findChild(QObject, "autoPrint").setProperty('checked', self._autoPrint)
         self._dialog.findChild(QObject, "nameField").setProperty('text', self.targetSendFileName)
         self._dialog.findChild(QObject, "nameField").select(0, len(self.targetSendFileName))
-        self._dialog.findChild(QObject, "nameField").setProperty('focus', True)
+        self._dialog.findChild(QObject, "nameField").setProperty('focus', True)        
 
     def onFilenameChanged(self):
         fileName = self._dialog.findChild(QObject, "nameField").property('text').strip()
@@ -245,6 +256,7 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
                 self._message.addAction("PRINT", catalog.i18nc("@action:button", "YES"), None, "")
                 self._message.addAction("NO", catalog.i18nc("@action:button", "NO"), None, "")
                 self._message.actionTriggered.connect(self._onActionTriggered)
+                self._message.setProgress(None)
                 self._message.show()
             else:
                 self._onActionTriggered(self._message, "PRINT")
@@ -278,11 +290,46 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
         self._message.show()
         Logger.log('e', result_msg)
 
+    def updateChamberFan(self):        
+        global_container_stack = self._application.getGlobalContainerStack()
+        if not global_container_stack:
+            return
+
+        cooling_chamber = global_container_stack.getProperty("cooling_chamber", "value")
+        if cooling_chamber == False:
+            return
+
+        cooling_chamber_at_layer = global_container_stack.getProperty("cooling_chamber_at_layer", "value")
+
+        scene = self._application.getController().getScene()
+        gcode_dict = getattr(scene, "gcode_dict", {})
+        if not gcode_dict:
+            return
+
+        data = gcode_dict[0]
+        for layer in data:
+            lines = layer.split("\n")
+            for line in lines:
+                if ";LAYER:" in line:
+                    index = data.index(layer)
+                    current_layer = int(line.split(":")[1])
+                    if current_layer == cooling_chamber_at_layer:
+                        layer = "M106 T-2 ;Enable chamber loop\n" + layer
+                        data[index] = layer
+                        data[-1] = "M107 T-2 ;Disable chamber loop\n" + data[-1]
+                        setattr(scene, "gcode_dict", gcode_dict)
+                        return
+
+
     def onFilenameAccepted(self):
         self.targetSendFileName = self._dialog.findChild(QObject, "nameField").property('text').strip()
+        autoprint = self._dialog.findChild(QObject, "autoPrint").property('checked')
+        if autoprint != self._autoPrint:
+            self._autoPrint = autoprint
+            self._preferences.setValue("QidiPrint/autoprint", self._autoPrint)
         Logger.log("d", self._name + " | Filename set to: " + self.targetSendFileName)
-        self._dialog.deleteLater()
-
+        self._dialog.deleteLater()        
+        self.updateChamberFan()
         success = False
         with open(self._localTempGcode, 'w+', buffering=1) as fp:
             if fp:
@@ -293,12 +340,10 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
             self._message = Message(
                 catalog.i18nc("@info:status", "Uploading to {}").format(self._name),
                 title=catalog.i18nc("@label", "Print jobs"),
-                progress=-1, lifetime=0, dismissable=False, use_inactivity_timer=False, option_text="Auto Print", option_state=False
+                progress=-1, lifetime=0, dismissable=False, use_inactivity_timer=False
             )
             self._message.addAction("ABORT", catalog.i18nc("@action:button", "Cancel"), None, "")
             self._message.actionTriggered.connect(self._onActionTriggered)
-            self._message.optionToggled.connect(self._onOptionStateChanged)
-            self._autoPrint = False
             self._message.show()
             Thread(target=self.startSendingThread, daemon=True, name=self._name + " File Send").start()
         else:
@@ -318,9 +363,6 @@ class QidiPrintOutputDevice(PrinterOutputDevice):
         elif action == "ABORT":
             Logger.log("i", "Stopping upload because the user pressed cancel.")
             self._qidi._abort = True
-
-    def _onOptionStateChanged(self, optstate):
-        self._autoPrint = bool(optstate)
 
     def getProperties(self):
         return self._properties

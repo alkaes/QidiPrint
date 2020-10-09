@@ -5,7 +5,9 @@ from PyQt5.QtQml import QQmlComponent, QQmlContext
 from UM.Message import Message
 from UM.Logger import Logger
 from UM.Application import Application
-
+from UM.Settings.SettingDefinition import SettingDefinition
+from UM.Settings.DefinitionContainer import DefinitionContainer
+from UM.Settings.ContainerRegistry import ContainerRegistry
 from UM.PluginRegistry import PluginRegistry
 from UM.OutputDevice.OutputDevicePlugin import OutputDevicePlugin
 from UM.Signal import Signal, signalemitter
@@ -19,6 +21,7 @@ from UM.i18n import i18nCatalog
 catalog = i18nCatalog("cura")
 
 from cura.CuraApplication import CuraApplication
+from collections import OrderedDict
 
 @signalemitter
 class QidiPrintPlugin(QObject, OutputDevicePlugin):
@@ -38,6 +41,67 @@ class QidiPrintPlugin(QObject, OutputDevicePlugin):
         self._instances = json.loads(self._preferences.getValue("QidiPrint/instances"))
         self._scan_job = QidiFinderJob()
         self._scan_job.IPListChanged.connect(self._discoveredDevices)
+
+        self._i18n_catalog = catalog
+        self._settings_dict = OrderedDict()
+        self._settings_dict["cooling_chamber"] = {
+            "label": "Chamber Loop Fans",
+            "description": "Enables Chamber Loop fans while printing",
+            "type": "bool",
+            "default_value": False,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }
+        self._settings_dict["cooling_chamber_at_layer"] = {
+            "label": "Start Chamber Loop on Layer",
+            "description": "Start Chamber Loop on Layer Nr",
+            "type": "int",
+            "unit": "layer",
+            "default_value": 1,
+            "minimum_value": 1,
+            "minimum_value_warning": 1,
+            "enabled": "cooling_chamber",
+            "maximum_value_warning": 300,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }        
+
+        ContainerRegistry.getInstance().containerLoadComplete.connect(self._onContainerLoadComplete)
+
+    def _onContainerLoadComplete(self, container_id):
+        if not ContainerRegistry.getInstance().isLoaded(container_id):
+            # skip containers that could not be loaded, or subsequent findContainers() will cause an infinite loop
+            return
+
+        try:
+            container = ContainerRegistry.getInstance().findContainers(id = container_id)[0]
+        except IndexError:
+            # the container no longer exists
+            return
+
+        if not isinstance(container, DefinitionContainer):
+            # skip containers that are not definitions
+            return
+        if container.getMetaDataEntry("type") == "extruder":
+            # skip extruder definitions
+            return
+
+        cooling_category = container.findDefinitions(key="cooling")
+        cooling_chamber_setting = container.findDefinitions(key=list(self._settings_dict.keys())[0])
+        if cooling_category and not cooling_chamber_setting:
+            # this machine doesn't have a cooling chamber setting yet
+            cooling_category = cooling_category[0]
+            for setting_key, setting_dict in self._settings_dict.items():
+
+                definition = SettingDefinition(setting_key, container, cooling_category, self._i18n_catalog)
+                definition.deserialize(setting_dict)
+
+                cooling_category._children.append(definition)
+                container._definition_cache[setting_key] = definition
+                container._updateRelations(definition)
+
 
     @classmethod
     def getInstance(cls, *args, **kwargs) -> "QidiPrintPlugin":

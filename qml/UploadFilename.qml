@@ -48,6 +48,13 @@ UM.Dialog
             visible: !base.validName;
             text: base.validationError;
         }
+
+        CheckBox {
+            objectName: "autoPrint"
+            id: autoPrint
+            checked: true
+            text: "Auto Print"
+        }           
     }
 
     rightButtons: [

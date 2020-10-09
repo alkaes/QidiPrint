@@ -6,20 +6,30 @@
 
 ![Screenshot of the monitor stage](/screenshots/monitor.png)
 
+## Installation via Cura Marketplace
+
+Simply open Cura and go to the **Marketplace** in the menubar, search for the QidiPrint plugin and install it!
+
 ## Manual Installation
 
-with Cura not running, unpack the zip file from the
+With Cura not running, unpack the zip file from the
 [release](https://github.com/alkaes/QidiPrint/releases/latest) to this
 specific folder:
-
 
   * Windows: `%USERPROFILE%\AppData\Roaming\cura\4.7\plugins\`
   * MacOS: `~/Library/Application Support/Cura/4.7/plugins/`
   * Linux: `/home/<username>/.local/share/cura/4.7/plugins/`
 
+If you don't have Qidi printers available in Cura, unpack the [Qidi Printer Definitions.zip](https://github.com/alkaes/QidiPrint/releases/download/1.2.0/Qidi.Printer.Definitions.zip) to this specific folder:
+  * Windows: `%USERPROFILE%\AppData\Roaming\cura\4.7\`
+  * MacOS: `~/Library/Application Support/Cura/4.7/`
+  * Linux: `/home/<username>/.local/share/cura/4.7/`
+
 ## Configuration
 
 **Do NOT try to add a new "networked printer"!** This is only for Ultimaker printers.
+
+**If you did not use printer definitions archive from above to add Qidi printer, in order for this plugin working properly, your printer.def.json must have "manufacturer" property set to "Qidi"**
 
 QIDI printers are configured through the extension menu bar:
 
