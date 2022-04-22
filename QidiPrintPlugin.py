@@ -135,8 +135,8 @@ class QidiPrintPlugin(QObject, OutputDevicePlugin):
 
     def disconnect(self, key):
         Logger.log("d", "disconnecting '{}'", key)
-        if key in self._printers:
-            self._printers[key].close()            
+        #if key in self._printers:
+            #self._printers[key].close()            
 
     def onglobalContainerStackChanged(self):
         active_machine = Application.getInstance().getGlobalContainerStack()
