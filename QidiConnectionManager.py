@@ -1,5 +1,5 @@
-from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtNetwork import QUdpSocket, QHostAddress
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 
 from typing import Union, Optional, List, cast, TYPE_CHECKING
 from time import time, sleep

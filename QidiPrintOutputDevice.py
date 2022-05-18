@@ -5,9 +5,9 @@ from time import time, sleep
 import subprocess, re, threading, platform, struct, traceback, sys, base64, json, urllib
 from typing import cast, Any, Callable, Dict, List, Optional
 
-from PyQt5.QtCore import QFile, QUrl, QObject, QCoreApplication, QByteArray, QTimer, pyqtProperty, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QDesktopServices
-from PyQt5.QtQml import QQmlComponent, QQmlContext
+from PyQt6.QtCore import QFile, QUrl, QObject, QCoreApplication, QByteArray, QTimer, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtQml import QQmlComponent, QQmlContext
 from timeit import default_timer as Timer
 
 from cura.CuraApplication import CuraApplication
