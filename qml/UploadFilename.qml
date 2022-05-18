@@ -1,7 +1,7 @@
-import QtQuick 2.1
-import QtQuick.Controls 1.1
-import QtQuick.Dialogs 1.2
-import QtQuick.Window 2.1
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Window
 
 import UM 1.1 as UM
 
@@ -66,7 +66,6 @@ UM.Dialog
             text: catalog.i18nc("@action:button", "OK");
             onClicked: base.accept();
             enabled: base.validName;
-            isDefault: true;
         }
     ]
 }

@@ -1,6 +1,6 @@
 import re, os.path, json, threading, time
-from PyQt5.QtCore import QObject, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
-from PyQt5.QtQml import QQmlComponent, QQmlContext
+from PyQt6.QtCore import QObject, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtQml import QQmlComponent, QQmlContext
 
 from UM.Message import Message
 from UM.Logger import Logger
@@ -48,7 +48,6 @@ class QidiPrintPlugin(QObject, OutputDevicePlugin):
             "label": "Chamber Loop Fans",
             "description": "Enables Chamber Loop fans while printing",
             "type": "bool",
-            "resolve": "any(extruderValues('cooling_chamber'))",
             "default_value": False,
             "settable_per_mesh": False,
             "settable_per_extruder": False,
@@ -58,7 +57,6 @@ class QidiPrintPlugin(QObject, OutputDevicePlugin):
             "label": "Start Chamber Loop on Layer",
             "description": "Start Chamber Loop on Layer Nr",
             "type": "int",
-            "resolve": "min(extruderValues('cooling_chamber_at_layer'))",
             "unit": "layer",
             "default_value": 1,
             "minimum_value": 1,
