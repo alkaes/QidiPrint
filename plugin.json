@@ -1,6 +1,6 @@
 {
     "name": "QidiPrint",
-    "author": "Nick Kuvyrkin",
+    "author": "Aleksey Sokolov, Nick Kuvyrkin and Phill Tran",
     "description": "Enables remote printing and monitoring of Qidi 3D printers over network",
     "version": "1.4.0",
     "api": 5,
