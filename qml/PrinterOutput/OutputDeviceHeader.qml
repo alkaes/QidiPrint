@@ -1,11 +1,9 @@
-import QtQuick
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.3
 
-import QtQuick.Controls
-import QtQuick.Layouts
-
-import UM as UM
-import Cura as Cura
-
+import UM 1.5 as UM
+import Cura 1.5 as Cura
 
 Item
 {
