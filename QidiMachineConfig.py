@@ -5,20 +5,9 @@ from UM.Application import Application
 
 from UM.Settings.ContainerRegistry import ContainerRegistry
 from cura.MachineAction import MachineAction
-from UM.PluginRegistry import PluginRegistry
 from cura.CuraApplication import CuraApplication
 
 from PyQt6.QtCore import pyqtSignal, pyqtProperty, pyqtSlot, QUrl, QObject
-from PyQt6.QtQml import QQmlComponent, QQmlContext
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtNetwork import QNetworkRequest, QNetworkAccessManager
-
-import os.path
-import json
-import base64
-import time
-
-from PyQt6.QtCore import QTimer
 
 catalog = i18nCatalog("cura")
 
