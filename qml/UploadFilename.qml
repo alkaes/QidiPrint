@@ -1,9 +1,10 @@
-import QtQuick 2.1
-import QtQuick.Controls 1.1
-import QtQuick.Dialogs 1.2
-import QtQuick.Window 2.1
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Window
 
-import UM 1.1 as UM
+import UM as UM
+import Cura as Cura
 
 UM.Dialog
 {
@@ -32,7 +33,7 @@ UM.Dialog
     Column {
         anchors.fill: parent;
 
-        TextField {
+        Cura.TextField {
             objectName: "nameField";
             id: nameField;
             width: parent.width;
@@ -44,12 +45,12 @@ UM.Dialog
             Keys.onEscapePressed: base.reject();
         }
 
-        Label {
+        UM.Label {
             visible: !base.validName;
             text: base.validationError;
         }
 
-        CheckBox {
+        UM.CheckBox {
             objectName: "autoPrint"
             id: autoPrint
             checked: true
@@ -58,15 +59,14 @@ UM.Dialog
     }
 
     rightButtons: [
-        Button {
+        Cura.SecondaryButton {
             text: catalog.i18nc("@action:button", "Cancel");
             onClicked: base.reject();
         },
-        Button {
+        Cura.PrimaryButton {
             text: catalog.i18nc("@action:button", "OK");
             onClicked: base.accept();
             enabled: base.validName;
-            isDefault: true;
         }
     ]
 }

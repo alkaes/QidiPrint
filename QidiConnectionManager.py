@@ -1,8 +1,8 @@
-from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtNetwork import QUdpSocket, QHostAddress
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 
-from typing import Union, Optional, List, cast, TYPE_CHECKING
-from time import time, sleep
+from typing import cast
+from time import sleep
 from enum import Enum
 from timeit import default_timer as Timer
 from socket import *
@@ -13,17 +13,11 @@ from UM.Job import Job
 
 import subprocess
 import re
-import threading
-import platform
 import struct
-import traceback
 import sys
-import base64
-import json
-import urllib
 import os.path
 
-from threading import Thread, Lock
+from threading import Lock
 
 
 class QidiResult(Enum):
@@ -150,6 +144,9 @@ class QidiConnectionManager(QObject):
                 self.__log("w", '{} Connection timeout ', self._ip.toString())
                 continue
             self.__log("d", 'Connected')
+            if 'ok X:' not in msg:
+                tryCnt -= 1
+                continue
             msg = msg.rstrip()
             self.__log("d", msg)
             msgs = msg.split(' ')
@@ -176,15 +173,19 @@ class QidiConnectionManager(QObject):
                     elif id == 'U':
                         self._file_encode = value.replace("'", '')
             self._connected = True
+        tryCnt = 0
+        while tryCnt < 10:
+            tryCnt += 1
             msg, res = self.request('M4002 ', 2000, 2)
             if res == QidiResult.SUCCES:
-                if 'ok ' in msg:
-                    msg = msg.rstrip()
-                    msg = msg.split('ok ')
-                    self._firmware_ver = msg[1]
-            self.conectionStateChanged.emit(self._connected)
-            return True
-        return False
+                if 'ok V' not in msg:
+                    continue
+                msg = msg.rstrip()
+                msg = msg.split('ok ')
+                self._firmware_ver = msg[1]
+                self.conectionStateChanged.emit(self._connected)
+                return True
+        return self._connected
 
     def __compress_gcode(self):
         exePath = None
@@ -507,7 +508,7 @@ class QidiFinderJob(QObject, Job):
             message = message.rstrip()
             if message.find('ok MAC:') != -1:
                 device = QidiNetDevice()
-                device.ipaddr = QHostAddress(host.toIPv4Address()).toString()
+                device.ipaddr = QHostAddress(host.toIPv4Address()[0]).toString()
                 if not self._isDuplicateIP(device.ipaddr):
                     if 'NAME:' in message:
                         device.name = message[message.find('NAME:') + len('NAME:'):].split(' ')[0]
