@@ -138,68 +138,61 @@ Cura.MachineAction
             {
                 width: Math.round(parent.width * 0.5)
                 spacing: UM.Theme.getSize("default_margin").height
-
-                ScrollView
+                ListView
                 {
-                    id: objectListContainer
+                    id: listview
+
                     width: parent.width
                     height: base.height - contentRow.y - discoveryTip.height
 
-                    Rectangle
+                    ScrollBar.vertical: UM.ScrollBar {}
+                    clip: true
+
+                    model: manager.foundDevices
+                    onModelChanged:
                     {
-                        parent: objectListContainer
+                        var selectedKey = manager.getStoredKey();
+                        for(var i = 0; i < model.length; i++) {
+                            if(model[i].name == selectedKey)
+                            {
+                                currentIndex = i;
+                                return
+                            }
+                        }
+                        currentIndex = -1;
                     }
-
-                    ListView
+                    currentIndex: -1
+                    onCurrentIndexChanged:
                     {
-                        id: listview
-                        model: manager.foundDevices
-                        onModelChanged:
-                        {
-                            var selectedKey = manager.getStoredKey();
-                            for(var i = 0; i < model.length; i++) {
-                                if(model[i].name == selectedKey)
-                                {
-                                    currentIndex = i;
-                                    return
-                                }
-                            }
-                            currentIndex = -1;
-                        }
+                        base.selectedPrinter = listview.model[currentIndex];
+                    }
+                    Component.onCompleted:
+                    {
+                        manager.runDiscovery()
+                    }
+                    delegate: Rectangle
+                    {
+                        height: childrenRect.height
+                        color: ListView.isCurrentItem ? palette.highlight : index % 2 ? palette.base : palette.alternateBase
                         width: parent.width
-                        currentIndex: -1
-                        onCurrentIndexChanged:
+                        Label
                         {
-                            base.selectedPrinter = listview.model[currentIndex];                            
+                            anchors.left: parent.left
+                            anchors.leftMargin: UM.Theme.getSize("default_margin").width
+                            anchors.right: parent.right
+                            text: listview.model[index].name
+                            color: parent.ListView.isCurrentItem ? palette.highlightedText : palette.text
+                            elide: Text.ElideRight
                         }
-                        Component.onCompleted: 
-                        {
-                            manager.runDiscovery()
-                        }
-                        delegate: Rectangle
-                        {
-                            height: childrenRect.height
-                            color: ListView.isCurrentItem ? palette.highlight : index % 2 ? palette.base : palette.alternateBase
-                            width: parent.width
-                            UM.Label
-                            {
-                                anchors.left: parent.left
-                                anchors.leftMargin: UM.Theme.getSize("default_margin").width
-                                anchors.right: parent.right
-                                text: listview.model[index].name
-                                color: parent.ListView.isCurrentItem ? palette.highlightedText : palette.text
-                                elide: Text.ElideRight
-                            }
 
-                            MouseArea
+                        MouseArea
+                        {
+                            anchors.fill: parent;
+                            onClicked:
                             {
-                                anchors.fill: parent;
-                                onClicked:
+                                if(!parent.ListView.isCurrentItem)
                                 {
-                                    if(!parent.ListView.isCurrentItem)
-                                    {
-                                        parent.ListView.view.currentIndex = index;
-                                    }
+                                    parent.ListView.view.currentIndex = index;
                                 }
                             }
                         }

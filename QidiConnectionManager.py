@@ -150,9 +150,6 @@ class QidiConnectionManager(QObject):
                 self.__log("w", '{} Connection timeout ', self._ip.toString())
                 continue
             self.__log("d", 'Connected')
-            if 'ok X:' not in msg:
-                tryCnt -= 1
-                continue
             msg = msg.rstrip()
             self.__log("d", msg)
             msgs = msg.split(' ')
@@ -179,19 +176,15 @@ class QidiConnectionManager(QObject):
                     elif id == 'U':
                         self._file_encode = value.replace("'", '')
             self._connected = True
-        tryCnt = 0
-        while tryCnt < 10:
-            tryCnt += 1
             msg, res = self.request('M4002 ', 2000, 2)
             if res == QidiResult.SUCCES:
-                if 'ok V' not in msg:
-                    continue
-                msg = msg.rstrip()
-                msg = msg.split('ok ')
-                self._firmware_ver = msg[1]
-                self.conectionStateChanged.emit(self._connected)
-                return True
-        return self._connected
+                if 'ok ' in msg:
+                    msg = msg.rstrip()
+                    msg = msg.split('ok ')
+                    self._firmware_ver = msg[1]
+            self.conectionStateChanged.emit(self._connected)
+            return True
+        return False
 
     def __compress_gcode(self):
         exePath = None
