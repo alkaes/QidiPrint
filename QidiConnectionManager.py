@@ -1,8 +1,8 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 
-from typing import Union, Optional, List, cast, TYPE_CHECKING
-from time import time, sleep
+from typing import cast
+from time import sleep
 from enum import Enum
 from timeit import default_timer as Timer
 from socket import *
@@ -13,17 +13,11 @@ from UM.Job import Job
 
 import subprocess
 import re
-import threading
-import platform
 import struct
-import traceback
 import sys
-import base64
-import json
-import urllib
 import os.path
 
-from threading import Thread, Lock
+from threading import Lock
 
 
 class QidiResult(Enum):
