@@ -24,6 +24,8 @@ Item
         UM.Label
         {
             text: catalog.i18nc("@label", "Build plate")
+            font: UM.Theme.getFont("default")
+            color: UM.Theme.getColor("text")
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.margins: UM.Theme.getSize("default_margin").width
@@ -178,6 +180,7 @@ Item
 
                 text: "°C";
                 color: UM.Theme.getColor("setting_unit")
+                font: UM.Theme.getFont("default")
             }
             TextInput
             {

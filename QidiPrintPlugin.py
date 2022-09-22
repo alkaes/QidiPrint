@@ -1,16 +1,21 @@
-import json
+import re, os.path, json, threading, time
 from PyQt6.QtCore import QObject, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtQml import QQmlComponent, QQmlContext
 
+from UM.Message import Message
 from UM.Logger import Logger
 from UM.Application import Application
 from UM.Settings.SettingDefinition import SettingDefinition
 from UM.Settings.DefinitionContainer import DefinitionContainer
 from UM.Settings.ContainerRegistry import ContainerRegistry
+from UM.PluginRegistry import PluginRegistry
 from UM.OutputDevice.OutputDevicePlugin import OutputDevicePlugin
 from UM.Signal import Signal, signalemitter
+from UM.Job import Job
 from . import QidiPrintOutputDevice
 
-from .QidiConnectionManager import QidiFinderJob
+from threading import Thread, Event
+from .QidiConnectionManager import QidiFinderJob, QidiNetDevice
 
 from UM.i18n import i18nCatalog
 catalog = i18nCatalog("cura")
