@@ -1,10 +1,10 @@
-import UM 1.2 as UM
-import Cura 1.0 as Cura
+import UM as UM
+import Cura as Cura
 
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.1
-import QtQuick.Window 2.1
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Window
 
 Cura.MachineAction
 {
@@ -66,7 +66,7 @@ Cura.MachineAction
 
         SystemPalette { id: palette }
         UM.I18nCatalog { id: catalog; name:"cura" }
-        Label
+        UM.Label
         {
             id: pageTitle
             width: parent.width
@@ -75,7 +75,7 @@ Cura.MachineAction
             font.pointSize: 18
         }
 
-        Label
+        UM.Label
         {
             id: pageDescription
             width: parent.width
@@ -87,7 +87,7 @@ Cura.MachineAction
         {
             spacing: UM.Theme.getSize("default_lining").width
 
-            Button
+            Cura.SecondaryButton
             {
                 id: addButton
                 text: catalog.i18nc("@action:button", "Add");
@@ -97,7 +97,7 @@ Cura.MachineAction
                 }
             }
 
-            Button
+            Cura.SecondaryButton
             {
                 id: editButton
                 text: catalog.i18nc("@action:button", "Edit")
@@ -105,10 +105,10 @@ Cura.MachineAction
                 {
                     manualPrinterDialog.showDialog(base.selectedPrinter.name, base.selectedPrinter.address);
                 }
-                enabled : (base.selectedPrinter && base.selectedPrinter.status == "Closed")
+                enabled : (base.selectedPrinter != null && base.selectedPrinter && base.selectedPrinter.status == "Closed")
             }
 
-            Button
+            Cura.SecondaryButton
             {
                 id: removeButton
                 text: catalog.i18nc("@action:button", "Remove")
@@ -117,10 +117,10 @@ Cura.MachineAction
                     manager.removePrinter(base.selectedPrinter.name);
                     base.selectedPrinter = null;
                 }
-                enabled : (base.selectedPrinter && base.selectedPrinter.status == "Closed")
+                enabled : (base.selectedPrinter != null && base.selectedPrinter && base.selectedPrinter.status == "Closed")
             }
 
-            Button
+            Cura.SecondaryButton
             {
                 id: rediscoverButton
                 text: catalog.i18nc("@action:button", "Refresh")
@@ -138,77 +138,67 @@ Cura.MachineAction
             {
                 width: Math.round(parent.width * 0.5)
                 spacing: UM.Theme.getSize("default_margin").height
-
-                ScrollView
+                ListView
                 {
-                    id: objectListContainer
-                    frameVisible: true
+                    id: listview
+
                     width: parent.width
                     height: base.height - contentRow.y - discoveryTip.height
 
-                    Rectangle
+                    ScrollBar.vertical: UM.ScrollBar {}
+                    clip: true
+
+                    model: manager.foundDevices
+                    onModelChanged:
                     {
-                        parent: viewport
-                        anchors.fill: parent
-                        color: palette.light
+                        var selectedKey = manager.getStoredKey();
+                        for(var i = 0; i < model.length; i++) {
+                            if(model[i].name == selectedKey)
+                            {
+                                currentIndex = i;
+                                return
+                            }
+                        }
+                        currentIndex = -1;
                     }
-
-                    ListView
+                    currentIndex: -1
+                    onCurrentIndexChanged:
                     {
-                        id: listview
-                        model: manager.foundDevices
-                        onModelChanged:
-                        {
-                            var selectedKey = manager.getStoredKey();
-                            for(var i = 0; i < model.length; i++) {
-                                if(model[i].name == selectedKey)
-                                {
-                                    currentIndex = i;
-                                    return
-                                }
-                            }
-                            currentIndex = -1;
-                        }
+                        base.selectedPrinter = listview.model[currentIndex];
+                    }
+                    Component.onCompleted:
+                    {
+                        manager.runDiscovery()
+                    }
+                    delegate: Rectangle
+                    {
+                        height: childrenRect.height
+                        color: ListView.isCurrentItem ? palette.highlight : index % 2 ? palette.base : palette.alternateBase
                         width: parent.width
-                        currentIndex: -1
-                        onCurrentIndexChanged:
+                        Label
                         {
-                            base.selectedPrinter = listview.model[currentIndex];                            
+                            anchors.left: parent.left
+                            anchors.leftMargin: UM.Theme.getSize("default_margin").width
+                            anchors.right: parent.right
+                            text: listview.model[index].name
+                            color: parent.ListView.isCurrentItem ? palette.highlightedText : palette.text
+                            elide: Text.ElideRight
                         }
-                        Component.onCompleted: 
-                        {
-                            manager.runDiscovery()
-                        }
-                        delegate: Rectangle
-                        {
-                            height: childrenRect.height
-                            color: ListView.isCurrentItem ? palette.highlight : index % 2 ? palette.base : palette.alternateBase
-                            width: parent.width
-                            Label
-                            {
-                                anchors.left: parent.left
-                                anchors.leftMargin: UM.Theme.getSize("default_margin").width
-                                anchors.right: parent.right
-                                text: listview.model[index].name
-                                color: parent.ListView.isCurrentItem ? palette.highlightedText : palette.text
-                                elide: Text.ElideRight
-                            }
 
-                            MouseArea
+                        MouseArea
+                        {
+                            anchors.fill: parent;
+                            onClicked:
                             {
-                                anchors.fill: parent;
-                                onClicked:
+                                if(!parent.ListView.isCurrentItem)
                                 {
-                                    if(!parent.ListView.isCurrentItem)
-                                    {
-                                        parent.ListView.view.currentIndex = index;
-                                    }
+                                    parent.ListView.view.currentIndex = index;
                                 }
                             }
                         }
                     }
                 }
-                Label
+                UM.Label
                 {
                     id: discoveryTip
                     anchors.left: parent.left
@@ -223,7 +213,7 @@ Cura.MachineAction
                 width: Math.round(parent.width * 0.5)
                 visible: base.selectedPrinter ? true : false
                 // spacing: UM.Theme.getSize("default_margin").height
-                Label
+                UM.Label
                 {
                     width: parent.width
                     wrapMode: Text.WordWrap
@@ -236,37 +226,37 @@ Cura.MachineAction
                     visible: base.selectedPrinter != null
                     width: parent.width
                     columns: 2
-                    Label
+                    UM.Label
                     {
                         width: Math.round(parent.width * 0.5)
                         wrapMode: Text.WordWrap
                         text: catalog.i18nc("@label", "Firmware version")
                     }
-                    Label
+                    UM.Label
                     {
                         width: Math.round(parent.width * 0.5)
                         wrapMode: Text.WordWrap
                         text: base.selectedPrinter ? base.selectedPrinter.firmwareVersion : ""
                     }
-                    Label
+                    UM.Label
                     {
                         width: Math.round(parent.width * 0.5)
                         wrapMode: Text.WordWrap
                         text: catalog.i18nc("@label", "Address")
                     }
-                    Label
+                    UM.Label
                     {
                         width: Math.round(parent.width * 0.5)
                         wrapMode: Text.WordWrap
                         text: base.selectedPrinter ? base.selectedPrinter.address : ""
                     }
-                    Label
+                    UM.Label
                     {
                         width: Math.round(parent.width * 0.5)
                         wrapMode: Text.WordWrap
                         text: catalog.i18nc("@label", "Status")
                     }
-                    Label
+                    UM.Label
                     {
                         width: Math.round(parent.width * 0.5)
                         wrapMode: Text.WordWrap
@@ -275,7 +265,7 @@ Cura.MachineAction
                 }
                 Row{
                     spacing: 10
-                    Button
+                    Cura.PrimaryButton
                     {
                         id: connectbtn
                         text: catalog.i18nc("@action:button", "Connect")
@@ -297,7 +287,7 @@ Cura.MachineAction
                         }
                         onClicked: printerConnect()
                     }
-                    Button
+                    Cura.SecondaryButton
                     {
                         id: unconnectbtn
                         text: catalog.i18nc("@action:button", "Disconnect")
@@ -360,11 +350,11 @@ Cura.MachineAction
             anchors.fill: parent
             spacing: UM.Theme.getSize("default_margin").height
 
-            Label {
+            UM.Label {
                 id: displayNameLabel;
                 text: catalog.i18nc("@label", "Printer Name");
             }
-            TextField {
+            Cura.TextField {
                 id: nameField;
                 text: "";
                 maximumLength: 40;
@@ -375,28 +365,28 @@ Cura.MachineAction
                 }                
             }
 
-            Label
+            UM.Label
             {
                 text: catalog.i18nc("@alabel","Enter the IP address of your printer on the network.")
                 width: parent.width
                 wrapMode: Text.WordWrap
             }
 
-            TextField
+            Cura.TextField
             {
                 id: addressField
                 width: parent.width
                 maximumLength: 40
-                validator: RegExpValidator
+                validator: RegularExpressionValidator
                 {
-                    regExp: /^((?:[0-1]?[0-9]?[0-9]|2[0-4][0-9]|25[0-5])\.){0,3}(?:[0-1]?[0-9]?[0-9]|2[0-4][0-9]|25[0-5])$/
+                    regularExpression: /^((?:[0-1]?[0-9]?[0-9]|2[0-4][0-9]|25[0-5])\.){0,3}(?:[0-1]?[0-9]?[0-9]|2[0-4][0-9]|25[0-5])$/
                 }
                 onAccepted: btnOk.clicked()
             }
         }
 
         rightButtons: [
-            Button {
+            Cura.PrimaryButton {
                 id: btnOk
                 text: catalog.i18nc("@action:button", "OK")
                 onClicked:
@@ -405,9 +395,8 @@ Cura.MachineAction
                     manualPrinterDialog.hide()
                 }
                 enabled: manualPrinterDialog.addressText.trim() != "" && manualPrinterDialog.validName
-                isDefault: true
             },
-            Button {
+            Cura.SecondaryButton {
                 text: catalog.i18nc("@action:button","Cancel")
                 onClicked:
                 {

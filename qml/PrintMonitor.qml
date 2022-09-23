@@ -1,13 +1,12 @@
 // Copyright (c) 2019 Ultimaker B.V.
 // Cura is released under the terms of the LGPLv3 or higher.
 
-import QtQuick 2.7
-import QtQuick.Controls 1.1
-import QtQuick.Controls.Styles 1.1
-import QtQuick.Layouts 1.1
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 
-import UM 1.2 as UM
-import Cura 1.0 as Cura
+import UM as UM
+import Cura as Cura
 
 import "PrinterOutput"
 
@@ -58,7 +57,7 @@ Item
         property var extrudersModel: CuraApplication.getExtrudersModel()
 
         OutputDeviceHeader
-        {               
+        {
             outputDevice: connectedDevice
         }
 

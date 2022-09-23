@@ -50,7 +50,7 @@ class ChituCodeWriter(MeshWriter):
         )
 
     @call_on_qt_thread    
-    def write(self,stream: BufferedIOBase, nodes: List[SceneNode], mode = MeshWriter.OutputMode.BinaryMode) -> bool:
+    def write(self, stream: BufferedIOBase, nodes: List[SceneNode], mode = MeshWriter.OutputMode.BinaryMode) -> bool:
         Logger.log("i", "starting ChituCodeWriter.")
         if mode != MeshWriter.OutputMode.TextMode:
             Logger.log("e", "ChituCodeWriter does not support non-text mode.")

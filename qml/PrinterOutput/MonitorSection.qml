@@ -1,13 +1,10 @@
 // Copyright (c) 2017 Ultimaker B.V.
 // Cura is released under the terms of the LGPLv3 or higher.
 
-import QtQuick 2.10
-import QtQuick.Controls 1.4
-import QtQuick.Controls.Styles 1.4
-import QtQuick.Layouts 1.3
+import QtQuick
 
-import UM 1.2 as UM
-import Cura 1.0 as Cura
+import UM as UM
+import Cura as Cura
 
 Item
 {
@@ -21,7 +18,7 @@ Item
         width: base.width
         height: UM.Theme.getSize("section").height
 
-        Label
+        UM.Label
         {
             anchors.verticalCenter: parent.verticalCenter
             anchors.left: parent.left

@@ -1,6 +1,6 @@
 import re, os.path, json, threading, time
-from PyQt5.QtCore import QObject, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
-from PyQt5.QtQml import QQmlComponent, QQmlContext
+from PyQt6.QtCore import QObject, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtQml import QQmlComponent, QQmlContext
 
 from UM.Message import Message
 from UM.Logger import Logger

@@ -1,11 +1,10 @@
-import QtQuick 2.2
+import QtQuick
 
-import QtQuick.Controls 1.1
-import QtQuick.Controls.Styles 1.1
-import QtQuick.Layouts 1.1
+import QtQuick.Controls
+import QtQuick.Layouts
 
-import UM 1.2 as UM
-import Cura 1.0 as Cura
+import UM as UM
+import Cura as Cura
 
 
 Item
@@ -28,7 +27,7 @@ Item
         height: childrenRect.height
         color: UM.Theme.getColor("setting_category")
 
-        Label
+        UM.Label
         {
             id: outputDeviceNameLabel
             font: UM.Theme.getFont("large_bold")
@@ -39,7 +38,7 @@ Item
             text: outputDevice != null ? outputDevice.activePrinter.name : ""
         }
 
-        Label
+        UM.Label
         {
             id: outputDeviceAddressLabel
             text: (outputDevice != null && outputDevice.address != null) ? "IP:" + outputDevice.address : ""
