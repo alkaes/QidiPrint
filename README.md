@@ -52,7 +52,7 @@ should be the big blue button with you printer name on it!
 
 ## License
 
-Thank you to Nick Kuvyrkin ([nkuvyrkin](https://github.com/nkuvyrkin)), [jvrobert](https://github.com/jvrobert) and [philltran](https://github.com/philltran) for working on Cura 5.x support.
+Thank you to Nick Kuvyrkin ([nkuvyrkin](https://github.com/nkuvyrkin)), [ducphuc](https://github.com/ducphuc), [jvrobert](https://github.com/jvrobert) and [philltran](https://github.com/philltran) for working on Cura 5.x support.
 
 This project is inspired and using code from:
 * https://github.com/Kriechi/Cura-DuetRRFPlugin
