@@ -509,7 +509,6 @@ class QidiFinderJob(QObject, Job):
             if message.find('ok MAC:') != -1:
                 device = QidiNetDevice()
                 device.ipaddr = QHostAddress(host.toIPv4Address()[0]).toString()
-                Logger.log("d", 'device.ipaddr: {}', device.ipaddr)
                 if not self._isDuplicateIP(device.ipaddr):
                     if 'NAME:' in message:
                         device.name = message[message.find('NAME:') + len('NAME:'):].split(' ')[0]
