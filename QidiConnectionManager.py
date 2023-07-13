@@ -1,5 +1,5 @@
-from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtNetwork import QUdpSocket, QHostAddress
+from PyQt6.QtCore import QObject, pyqtSignal, QByteArray
+from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 
 from typing import Union, Optional, List, cast, TYPE_CHECKING
 from time import time, sleep
@@ -44,7 +44,7 @@ class QidiConnectionManager(QObject):
 
     def __init__(self, ip_addr, temp_gcode_file, log_enabled=False):
         super().__init__()
-        self._ip = QHostAddress(ip_addr)
+        self._ip = ip_addr
         self._localTempGcode = temp_gcode_file
         self._port = 3000
         self.BUFSIZE = 1280
@@ -83,7 +83,7 @@ class QidiConnectionManager(QObject):
 
     def __send(self, cmd):
         new_command = cast(str, cmd).encode(self._file_encode, 'ignore') if type(cmd) is str else cast(bytes, cmd)  # type: bytes
-        self._socket.writeDatagram(new_command, self._ip, self._port)
+        self._socket.writeDatagram(new_command, QHostAddress(self._ip), self._port)
 
     def __recieve(self, timeout_ms=100):
         if timeout_ms > 0:
@@ -120,16 +120,17 @@ class QidiConnectionManager(QObject):
         while tryCnt < retries:
             tryCnt += 1
             if type(cmd) is str:
-                self.__log("d", '[{}]sending cmd to {}: {}', tryCnt, self._ip.toString(), cmd)
+                self.__log("d", '[{}]sending cmd to {}: {}', tryCnt, self._ip, cmd)
             if self.abort is True:
                 return '', QidiResult.ABORTED
             if not self._connected:
                 return '', QidiResult.DISCONNECTED
             self.__send(cmd)
             msg, res = self.__recieve(timeout_ms)
+            self.__log("d", 'got reply from {}: {}', self._ip, str(msg).rstrip())
             if res == QidiResult.SUCCES:
                 if type(cmd) is str:  # Log reply message only for str commands
-                    self.__log("d", 'got reply from {}: {}', self._ip.toString(), str(msg).rstrip())
+                    self.__log("d", 'got reply from {}: {}', self._ip, str(msg).rstrip())
                 break
         return msg, res
 
@@ -147,7 +148,7 @@ class QidiConnectionManager(QObject):
             self.__send("M4001")
             msg, res = self.__recieve()
             if res is not QidiResult.SUCCES:
-                self.__log("w", '{} Connection timeout ', self._ip.toString())
+                self.__log("w", '{} Connection timeout ', self._ip)
                 continue
             self.__log("d", 'Connected')
             msg = msg.rstrip()
@@ -507,7 +508,7 @@ class QidiFinderJob(QObject, Job):
             message = message.rstrip()
             if message.find('ok MAC:') != -1:
                 device = QidiNetDevice()
-                device.ipaddr = QHostAddress(host.toIPv4Address()).toString()
+                device.ipaddr = QHostAddress(host.toIPv4Address()[0]).toString()
                 if not self._isDuplicateIP(device.ipaddr):
                     if 'NAME:' in message:
                         device.name = message[message.find('NAME:') + len('NAME:'):].split(' ')[0]
